@@ -79,15 +79,28 @@ interpreter, driven by 67 WebIDL binding files.
 (`DOMTokenList`), CSSOM (`CSSRule` / `CSSStyleSheet`), most `HTML*Element` interfaces, `addEventListener`,
 `KeyboardEvent`, `Location`, `Navigator`, `console`, `JSON`, `<canvas>` 2D, form access and validation.
 
-**Absent — verified against the binding set, not merely untested:**
+**Not usable — verified by reading the generated bindings, not merely untested.** These fall into two
+different categories, which matters if you do feature detection:
 
-| API | Consequence |
-| --- | --- |
-| `XMLHttpRequest`, `fetch` | No AJAX of any kind. |
-| `Promise` | No `async`/`await`. |
-| `WebSocket` | No live connections. |
-| `localStorage` / `sessionStorage` | No client-side persistence. |
-| `Worker` | No background threads. |
+| API | State | Consequence |
+| --- | --- | --- |
+| `XMLHttpRequest`, `fetch` | No WebIDL, nothing generated at all | No AJAX of any kind. |
+| `Promise` | Not generated | No `async`/`await`. |
+| `WebSocket` | Stub generated from WebIDL | No live connections. |
+| `localStorage` / `sessionStorage` | Getter *registered on `window`*, body returns `undefined` | No client-side persistence. |
+| `Worker` | Stub generated from WebIDL | No background threads. |
+
+The storage case is the trap. `nsgenbind` emits `dukky_window_localStorage_getter`, and it *is* installed as
+a property on the global object — but the generated body has no implementation and falls through to
+`return 0`, i.e. `undefined`. So:
+
+```js
+typeof localStorage !== 'undefined'   // false  <- correct, use this
+'localStorage' in window              // TRUE   <- lies, the property exists
+```
+
+Feature-detect with `typeof`, never with `in` or truthiness on the constructor. A script guarding on `in`
+will conclude storage is available and then fail on first use.
 
 One polyfill ships (`Array.from`). ES6+ syntax — arrow functions, `let`/`const`, classes, template literals —
 is a **parse error** to an ES5.1 interpreter, so a modern bundle fails at load rather than degrading.

@@ -73,6 +73,44 @@ for (var i = 0; i < checks.length; i++) {
   v.className = 'v ' + (checks[i][1] ? 'yes' : 'no');
 }
 
+/* The `in` vs `typeof` trap.
+   nsgenbind registers window.localStorage / sessionStorage as real properties
+   on the global object, but the generated getter bodies have no implementation
+   and fall through to `return 0` -- i.e. undefined. So `'localStorage' in
+   window` is TRUE while the API is entirely unusable. Feature detection has to
+   use typeof; a script guarding with `in` will proceed and then fail. */
+var trapRows = [
+  ['localStorage',   'localStorage'],
+  ['sessionStorage', 'sessionStorage'],
+  ['WebSocket',      'WebSocket'],
+  ['Worker',         'Worker']
+];
+var trapTbl = document.createElement('table');
+var hdr = trapTbl.insertRow(-1);
+hdr.insertCell(0).appendChild(document.createTextNode('property'));
+hdr.insertCell(1).appendChild(document.createTextNode("'x' in window"));
+hdr.insertCell(2).appendChild(document.createTextNode('typeof !== undefined'));
+
+for (var j = 0; j < trapRows.length; j++) {
+  var name = trapRows[j][1];
+  var inWin = false, byTypeof = false;
+  try { inWin = (name in window); } catch (e) {}
+  try { byTypeof = (typeof window[name] !== 'undefined'); } catch (e) {}
+  var r = trapTbl.insertRow(-1);
+  r.insertCell(0).appendChild(document.createTextNode(name));
+  r.insertCell(1).appendChild(document.createTextNode(inWin ? 'true' : 'false'));
+  r.insertCell(2).appendChild(document.createTextNode(byTypeof ? 'true' : 'false'));
+}
+
+var trapHdr = document.createElement('h1');
+trapHdr.appendChild(document.createTextNode('Feature-detection trap'));
+document.body.appendChild(trapHdr);
+var trapNote = document.createElement('p');
+trapNote.innerHTML = 'Where these two columns disagree, the property exists but is ' +
+  'unusable. Detect with <b>typeof</b>, not <b>in</b>.';
+document.body.appendChild(trapNote);
+document.body.appendChild(trapTbl);
+
 /* Canvas smoke test */
 try {
   var ctx = document.getElementById('cv').getContext('2d');
