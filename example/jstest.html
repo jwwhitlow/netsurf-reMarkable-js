@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NetSurf JS capability probe</title>
+<style>
+  body { font-family: sans-serif; font-size: 20px; margin: 1em; }
+  h1 { font-size: 24px; }
+  table { border-collapse: collapse; width: 100%; }
+  td { border-bottom: 1px solid #999; padding: 6px 4px; }
+  td.k { font-family: monospace; }
+  td.v { text-align: right; font-weight: bold; width: 6em; }
+  .yes:after { content: "YES"; }
+  .no:after  { content: "no"; }
+  #verdict { padding: 8px; border: 3px solid #000; margin-bottom: 1em; }
+</style>
+</head>
+<body>
+
+<h1>NetSurf JS capability probe</h1>
+
+<div id="verdict">JavaScript is <b>OFF</b> (this text is replaced by script)</div>
+
+<p>Engine: <span id="engine">unknown</span></p>
+
+<table id="results"></table>
+
+<canvas id="cv" width="200" height="60" style="border:1px solid #000"></canvas>
+<p id="canvasnote">canvas: not drawn</p>
+
+<script>
+/* Deliberately ES5-only: an ES6 token anywhere in this file would be a parse
+   error in Duktape and the whole probe would silently do nothing. */
+
+document.getElementById('verdict').innerHTML =
+  'JavaScript is <b>ON</b> — DOM mutation works.';
+
+/* Duktape exposes its version as a global. */
+var engine = 'unknown';
+if (typeof Duktape !== 'undefined' && Duktape.version) {
+  engine = 'Duktape ' + Duktape.version;
+} else if (typeof navigator !== 'undefined' && navigator.userAgent) {
+  engine = navigator.userAgent;
+}
+document.getElementById('engine').appendChild(document.createTextNode(engine));
+
+var checks = [
+  ['document.getElementById', typeof document.getElementById === 'function'],
+  ['addEventListener',        typeof document.addEventListener === 'function'],
+  ['querySelector',           typeof document.querySelector === 'function'],
+  ['createElement',           typeof document.createElement === 'function'],
+  ['console.log',             typeof console !== 'undefined' && typeof console.log === 'function'],
+  ['JSON',                    typeof JSON !== 'undefined'],
+  ['Array.from (polyfill)',   typeof Array.from === 'function'],
+  ['Array.prototype.forEach', typeof [].forEach === 'function'],
+  ['canvas getContext',       typeof document.createElement('canvas').getContext === 'function'],
+  ['setTimeout',              typeof setTimeout === 'function'],
+  ['XMLHttpRequest',          typeof XMLHttpRequest !== 'undefined'],
+  ['fetch',                   typeof fetch !== 'undefined'],
+  ['Promise',                 typeof Promise !== 'undefined'],
+  ['WebSocket',               typeof WebSocket !== 'undefined'],
+  ['localStorage',            typeof localStorage !== 'undefined'],
+  ['Worker',                  typeof Worker !== 'undefined']
+];
+
+var tbl = document.getElementById('results');
+for (var i = 0; i < checks.length; i++) {
+  var row = tbl.insertRow(-1);
+  var k = row.insertCell(0);
+  var v = row.insertCell(1);
+  k.className = 'k';
+  k.appendChild(document.createTextNode(checks[i][0]));
+  v.className = 'v ' + (checks[i][1] ? 'yes' : 'no');
+}
+
+/* Canvas smoke test */
+try {
+  var ctx = document.getElementById('cv').getContext('2d');
+  if (ctx) {
+    ctx.fillRect(10, 10, 60, 40);
+    ctx.strokeRect(90, 10, 60, 40);
+    document.getElementById('canvasnote').innerHTML = 'canvas: drew 2 rects';
+  }
+} catch (e) {
+  document.getElementById('canvasnote').innerHTML = 'canvas: failed - ' + e;
+}
+
+/* Event handling smoke test */
+try {
+  var vd = document.getElementById('verdict');
+  vd.addEventListener('click', function () {
+    vd.innerHTML = 'click event fired — events work';
+  }, false);
+} catch (e) { /* ignore */ }
+</script>
+
+<noscript><p><b>noscript: scripting is disabled.</b></p></noscript>
+
+</body>
+</html>

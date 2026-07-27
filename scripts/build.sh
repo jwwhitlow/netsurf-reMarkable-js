@@ -53,4 +53,8 @@ export LDFLAGS="$LDFLAGS -Wl,--start-group -ljxl -ljxl_cms -lhwy -lbrotlienc -lb
 
 export CC="${CROSS_COMPILE}gcc"
 export STRIP="${CROSS_COMPILE}strip"
-$MAKE TARGET=framebuffer NETSURF_FB_FONTLIB=freetype NETSURF_STRIP_BINARY=YES NETSURF_USE_LIBICONV_PLUG=NO NETSURF_USE_DUKTAPE=NO NETSURF_REMARKABLE=YES
+# NETSURF_USE_DUKTAPE=YES compiles in the Duktape engine plus the DOM bindings
+# nsgenbind generates from the .bnd/WebIDL files. This is only half the switch:
+# desktop/options.h defaults enable_javascript to false, so example/Choices has
+# to set it to 1 as well or a Duktape build still runs with scripting off.
+$MAKE TARGET=framebuffer NETSURF_FB_FONTLIB=freetype NETSURF_STRIP_BINARY=YES NETSURF_USE_LIBICONV_PLUG=NO NETSURF_USE_DUKTAPE=YES NETSURF_REMARKABLE=YES

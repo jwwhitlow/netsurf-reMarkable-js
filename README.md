@@ -59,6 +59,58 @@ The 'a' in the bottom-right corner screen toggles the keyboard.
 
 More usage information may be found on the [official NetSurf website](https://www.netsurf-browser.org/documentation/#User).
 
+## JavaScript
+
+This branch builds with JavaScript **enabled**. Upstream (and every reMarkable fork before it) shipped
+`NETSURF_USE_DUKTAPE=NO`, so the engine was compiled out entirely.
+
+Scripting is gated twice in NetSurf and both gates have to move:
+
+- `scripts/build.sh` — `NETSURF_USE_DUKTAPE=YES` compiles in the engine and the `nsgenbind`-generated bindings.
+- `example/Choices` — `enable_javascript:1`. The compiled-in default in `desktop/options.h` is `false`, so a
+  Duktape build still runs with scripting off unless `Choices` says otherwise.
+
+### What this actually gets you
+
+Be realistic before relying on it. NetSurf's engine is [Duktape](https://duktape.org/), an **ES5.1**
+interpreter, driven by 67 WebIDL binding files.
+
+**Works:** DOM traversal and mutation, `getElementById` / `querySelector`, `createElement`, `classList`
+(`DOMTokenList`), CSSOM (`CSSRule` / `CSSStyleSheet`), most `HTML*Element` interfaces, `addEventListener`,
+`KeyboardEvent`, `Location`, `Navigator`, `console`, `JSON`, `<canvas>` 2D, form access and validation.
+
+**Absent — verified against the binding set, not merely untested:**
+
+| API | Consequence |
+| --- | --- |
+| `XMLHttpRequest`, `fetch` | No AJAX of any kind. |
+| `Promise` | No `async`/`await`. |
+| `WebSocket` | No live connections. |
+| `localStorage` / `sessionStorage` | No client-side persistence. |
+| `Worker` | No background threads. |
+
+One polyfill ships (`Array.from`). ES6+ syntax — arrow functions, `let`/`const`, classes, template literals —
+is a **parse error** to an ES5.1 interpreter, so a modern bundle fails at load rather than degrading.
+
+The practical line: this runs **scripted pages**, not **web apps**. Progressive-enhancement sites, form
+validation, menus and canvas work. Anything built on React/Vue/Angular, or that fetches JSON to render
+itself, will not — and no configuration changes that, because it is the engine. A browser for modern sites
+on the reMarkable needs a WebKit-family engine (e.g. WPE) instead.
+
+### Verifying
+
+`example/jstest.html` is a probe page that reports which APIs the built binary actually exposes. Copy it to
+the device and open it with a `file:///` URL. It is deliberately written in strict ES5: a single ES6 token
+would be a parse error and the page would report nothing at all.
+
+If you are upgrading an existing install and keeping your old config, set the flag by hand rather than
+letting `make install` overwrite `Choices` — and do it while NetSurf is not running, since it rewrites the
+file on exit:
+
+```sh
+ssh root@<device> "sed -i 's/^enable_javascript:0/enable_javascript:1/' <path-to>/Choices"
+```
+
 ### Local build and installation
 
 #### Requirements

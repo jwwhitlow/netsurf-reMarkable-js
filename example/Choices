@@ -3,7 +3,7 @@ fb_download_directory:/home/root/Downloads
 fb_xochitl_restart_command:systemctl restart remux
 
 scale:150
-enable_javascript:0
+enable_javascript:1
 
 fb_face_sans_serif:/home/root/xovi/exthome/appload/netsurf/res/fonts/DejaVuSans.ttf
 fb_face_sans_serif_bold:/home/root/xovi/exthome/appload/netsurf/res/fonts/DejaVuSans-Bold.ttf
