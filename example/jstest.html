@@ -22,8 +22,10 @@
 <div id="results"></div>
 
 <h2>Feature-detection trap</h2>
-<p>Where these columns disagree, the property exists but is unusable.
-Detect with <b>typeof</b>, never <b>in</b>.</p>
+<p>Where the columns <b>disagree</b> (storage), the property exists but evaluates to
+<code>undefined</code> &mdash; <b>typeof</b> catches it, <b>in</b> does not.
+Where <b>both are true</b> (WebSocket, Worker), neither check helps: the constructor is a real
+function that throws <code>Bad constructor</code> only when called. See below.</p>
 <div id="traps"></div>
 
 <h2>Canvas</h2>
@@ -73,7 +75,9 @@ if (typeof Duktape !== 'undefined' && Duktape.version) {
 } else if (typeof navigator !== 'undefined' && navigator.userAgent) {
   engine = navigator.userAgent;
 }
-document.getElementById('engine').appendChild(document.createTextNode(engine));
+/* Replace the placeholder rather than appending to it, or the line renders as
+   "unknownMozilla/5.0 ..." and reads like the detection failed. */
+document.getElementById('engine').textContent = engine;
 
 function yn(v) { return v ? 'YES' : 'no'; }
 
