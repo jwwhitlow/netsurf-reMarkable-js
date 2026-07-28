@@ -14,6 +14,29 @@ APP_DIR ?= /home/root/xovi/exthome/appload/netsurf
 IMAGE_TAG ?= latest
 CLANGD_CONTAINER ?= netsurf-clangd
 
+# Target device architecture.
+#   armv7   - reMarkable 1 / 2
+#   aarch64 - reMarkable Paper Pro ("Ferrari", i.MX8MM)
+# The Paper Pro has no 32-bit loader and no armhf libraries, so an armv7 binary
+# fails there with "Exec format error"; it needs a native aarch64 build. The
+# toolchain image bakes in whichever triple is selected here, so `make image`
+# must be re-run after changing ARCH.
+ARCH ?= armv7
+
+ifeq ($(ARCH), aarch64)
+    TC_DIR := aarch64-remarkable-linux-gnu
+    TC_PREFIX := aarch64-remarkable-linux-gnu
+else ifeq ($(ARCH), armv7)
+    TC_DIR := arm-remarkable-linux-gnueabihf
+    TC_PREFIX := arm-linux-gnueabihf
+else
+    $(error ARCH must be armv7 or aarch64, got '$(ARCH)')
+endif
+
+# The toltec toolchain images are published for linux/amd64 only, so an arm64
+# host (Apple Silicon) has to run them emulated rather than natively.
+DOCKER_PLATFORM ?= linux/amd64
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
     USE_VOLUME_MOUNT ?= YES
@@ -36,7 +59,7 @@ clean: ## Clean build directory, build volume and clangd container
 ifeq ($(USE_VOLUME_MOUNT), NO)
 build: ## Build netsurf in Docker container (bind mount BUILD_DIR as build directory)
 	mkdir -p $(BUILD_DIR)
-	docker run --rm \
+	docker run --rm --platform $(DOCKER_PLATFORM) \
 	    --mount type=bind,source=$(MAKEFILE_DIR)/scripts,target=/opt/netsurf/scripts,readonly \
 	    --mount type=bind,source=$(MAKEFILE_DIR)/$(BUILD_DIR),target=/opt/netsurf/build \
 	    -e TARGET_WORKSPACE=/opt/netsurf/build \
@@ -50,11 +73,11 @@ build: ## Build netsurf in Docker container (volume mount build directory except
 # Only call setup if BUILD_DIR does not exist yet.
 	if [ ! -d $(BUILD_DIR) ]; then mkdir -p $(BUILD_DIR) && scripts/setup_local_development.sh versioned; fi
 # chown the build directory volume to the current user, so the build can run as current user
-	docker run --rm \
+	docker run --rm --platform $(DOCKER_PLATFORM) \
 		--mount type=volume,source=netsurf-build,target=/opt/netsurf/build \
 	    netsurf-build:$(IMAGE_TAG) \
 		chown -R $(UID):$(GID) /opt/netsurf/build
-	docker run --rm \
+	docker run --rm --platform $(DOCKER_PLATFORM) \
 	    --mount type=bind,source=$(MAKEFILE_DIR)/scripts,target=/opt/netsurf/scripts,readonly \
 	    --mount type=volume,source=netsurf-build,target=/opt/netsurf/build \
 	    --mount type=bind,source=$(MAKEFILE_DIR)/$(BUILD_DIR)/netsurf,target=/opt/netsurf/build/netsurf \
@@ -69,7 +92,9 @@ install: image build copy-resources copy-binary ## Build and copy binary and res
 uninstall: remove-resources remove-binary ## Uninstall binary and resources from device
 
 image: ## Build the Docker image that is used for building netsurf
-	docker build -t netsurf-build:$(IMAGE_TAG) .
+	docker build --platform $(DOCKER_PLATFORM) \
+	    --build-arg TC_DIR=$(TC_DIR) --build-arg TC_PREFIX=$(TC_PREFIX) \
+	    -t netsurf-build:$(IMAGE_TAG) .
 
 copy-resources: ## Copy resources into the installed app dir
 	ssh root@$(INSTALL_DESTINATION) "mkdir -p $(APP_DIR)/res"
@@ -93,11 +118,11 @@ clangd-build: ## [Dev] Prepare local dev container with clangd and compile-comma
 	mkdir -p $(BUILD_DIR)
 	docker rm -f $(CLANGD_CONTAINER)
 	docker build -t netsurf-localdev -f Dockerfile.localdev .
-	docker run --rm \
+	docker run --rm --platform $(DOCKER_PLATFORM) \
 		--mount type=bind,source=$(MAKEFILE_DIR)/$(BUILD_DIR),target=/opt/netsurf/build \
 	    netsurf-localdev:latest \
 		chown -R $(UID):$(GID) /opt/netsurf/build
-	docker run --rm \
+	docker run --rm --platform $(DOCKER_PLATFORM) \
 		--mount type=bind,source=$(MAKEFILE_DIR)/scripts,target=/opt/netsurf/scripts \
 		--mount type=bind,source=$(MAKEFILE_DIR)/$(BUILD_DIR),target=/opt/netsurf/build \
 		-e TARGET_WORKSPACE=/opt/netsurf/build \
@@ -107,7 +132,7 @@ clangd-build: ## [Dev] Prepare local dev container with clangd and compile-comma
 
 clangd-start: ## [Dev] Start the local development docker container with clangd set up
 	$(info To access clangd-container, you can use scripts/clangd_docker.sh.)
-	docker run --detach --name netsurf-clangd \
+	docker run --detach --platform $(DOCKER_PLATFORM) --name netsurf-clangd \
 		--mount type=bind,source=$(MAKEFILE_DIR)/scripts,target=/opt/netsurf/scripts \
 		--mount type=bind,source=$(MAKEFILE_DIR)/$(BUILD_DIR),target=/opt/netsurf/build \
 		-p 50505:50505 \

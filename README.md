@@ -124,6 +124,44 @@ file on exit:
 ssh root@<device> "sed -i 's/^enable_javascript:0/enable_javascript:1/' <path-to>/Choices"
 ```
 
+## Target architecture
+
+The build is cross-compiled, and the reMarkable line is **not** one architecture:
+
+| Device | Arch | `make ARCH=` |
+| --- | --- | --- |
+| reMarkable 1 / 2 | armv7 (i.MX6/i.MX7) | `armv7` (default) |
+| reMarkable Paper Pro ("Ferrari") | aarch64 (i.MX8MM) | `aarch64` |
+
+The Paper Pro has **no 32-bit loader and no armhf libraries at all** — `/lib/ld-linux-armhf.so.3` does not
+exist. An armv7 binary does not degrade there, it fails outright:
+
+```
+-sh: /tmp/nsfb: cannot execute binary file: Exec format error
+```
+
+so it needs a native aarch64 build. Every build script here is already driven by `$CHOST` / `$CROSS_COMPILE`,
+matching the dual-arch VELBUILD recipe, so selecting the toolchain is the only arch-specific decision.
+`ARCH` picks the triple and the toolchain image bakes it in, which means **`make image` must be re-run after
+changing `ARCH`**, and the build directory must be cleaned so stale objects for the other arch are not reused:
+
+```sh
+rm -rf build && docker volume rm -f netsurf-build
+make image ARCH=aarch64
+make build ARCH=aarch64
+```
+
+The toltec toolchain images are published for `linux/amd64` only, so an Apple Silicon host runs them
+emulated; `DOCKER_PLATFORM` handles this and the build is correspondingly slow.
+
+### Display on the Paper Pro
+
+The Paper Pro has no `/dev/fb0` — the panel is driven through DRM/KMS (`imx-drm`, `/dev/dri/card0`). NetSurf
+is not ported to DRM, and does not need to be: the app is launched under `qtfb-shim.so` via `LD_PRELOAD`,
+which presents an rM1-style framebuffer (`QTFB_SHIM_MODEL=RM1`) and forwards drawing to the compositor. That
+is configured in the appload `external.manifest.json`, so the shipped launch environment already handles it
+and the framebuffer frontend works unmodified.
+
 ### Local build and installation
 
 #### Requirements
