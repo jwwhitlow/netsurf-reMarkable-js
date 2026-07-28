@@ -5,37 +5,68 @@
 <title>NetSurf JS capability probe</title>
 <style>
   body { font-family: sans-serif; font-size: 20px; margin: 1em; }
-  h1 { font-size: 24px; }
+  h1 { font-size: 26px; }
+  h2 { font-size: 22px; margin-top: 1em; }
   table { border-collapse: collapse; width: 100%; }
-  td { border-bottom: 1px solid #999; padding: 6px 4px; }
-  td.k { font-family: monospace; }
-  td.v { text-align: right; font-weight: bold; width: 6em; }
-  .yes:after { content: "YES"; }
-  .no:after  { content: "no"; }
-  #verdict { padding: 8px; border: 3px solid #000; margin-bottom: 1em; }
+  td, th { border-bottom: 1px solid #999; padding: 6px 4px; text-align: left; }
+  td.v { text-align: right; font-weight: bold; width: 5em; }
+  #verdict { padding: 10px; border: 3px solid #000; margin-bottom: 1em; font-size: 22px; }
 </style>
 </head>
 <body>
 
-<h1>NetSurf JS capability probe</h1>
-
-<div id="verdict">JavaScript is <b>OFF</b> (this text is replaced by script)</div>
-
+<div id="verdict">JavaScript is <b>OFF</b> (script did not run)</div>
 <p>Engine: <span id="engine">unknown</span></p>
 
-<table id="results"></table>
+<h2>API availability</h2>
+<div id="results"></div>
 
+<h2>Feature-detection trap</h2>
+<p>Where these columns disagree, the property exists but is unusable.
+Detect with <b>typeof</b>, never <b>in</b>.</p>
+<div id="traps"></div>
+
+<h2>Canvas</h2>
 <canvas id="cv" width="200" height="60" style="border:1px solid #000"></canvas>
 <p id="canvasnote">canvas: not drawn</p>
 
 <script>
-/* Deliberately ES5-only: an ES6 token anywhere in this file would be a parse
-   error in Duktape and the whole probe would silently do nothing. */
+/* Strict ES5 only -- one ES6 token would be a parse error in Duktape and this
+   whole page would silently do nothing.
+
+   Build tables with createElement/appendChild only. NetSurf does NOT implement
+   HTMLTableElement.insertRow / HTMLTableRowElement.insertCell -- insertRow
+   returns undefined, so the older version of this probe died with
+   "cannot read property 'insertCell' of undefined" partway through. */
+
+function el(tag, text) {
+  var e = document.createElement(tag);
+  if (text !== undefined) { e.appendChild(document.createTextNode(text)); }
+  return e;
+}
+
+function buildTable(host, headers, rows) {
+  var t = document.createElement('table');
+  if (headers) {
+    var hr = document.createElement('tr');
+    for (var h = 0; h < headers.length; h++) { hr.appendChild(el('th', headers[h])); }
+    t.appendChild(hr);
+  }
+  for (var i = 0; i < rows.length; i++) {
+    var tr = document.createElement('tr');
+    for (var c = 0; c < rows[i].length; c++) {
+      var td = el('td', rows[i][c]);
+      if (c > 0) { td.className = 'v'; }
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+  document.getElementById(host).appendChild(t);
+}
 
 document.getElementById('verdict').innerHTML =
-  'JavaScript is <b>ON</b> — DOM mutation works.';
+  'JavaScript is <b>ON</b> &mdash; DOM mutation works.';
 
-/* Duktape exposes its version as a global. */
 var engine = 'unknown';
 if (typeof Duktape !== 'undefined' && Duktape.version) {
   engine = 'Duktape ' + Duktape.version;
@@ -44,17 +75,21 @@ if (typeof Duktape !== 'undefined' && Duktape.version) {
 }
 document.getElementById('engine').appendChild(document.createTextNode(engine));
 
+function yn(v) { return v ? 'YES' : 'no'; }
+
 var checks = [
   ['document.getElementById', typeof document.getElementById === 'function'],
+  ['document.querySelector',  typeof document.querySelector === 'function'],
+  ['document.createElement',  typeof document.createElement === 'function'],
   ['addEventListener',        typeof document.addEventListener === 'function'],
-  ['querySelector',           typeof document.querySelector === 'function'],
-  ['createElement',           typeof document.createElement === 'function'],
+  ['element.classList',       typeof document.body.classList !== 'undefined'],
   ['console.log',             typeof console !== 'undefined' && typeof console.log === 'function'],
   ['JSON',                    typeof JSON !== 'undefined'],
   ['Array.from (polyfill)',   typeof Array.from === 'function'],
-  ['Array.prototype.forEach', typeof [].forEach === 'function'],
+  ['Array forEach/map',       typeof [].forEach === 'function' && typeof [].map === 'function'],
   ['canvas getContext',       typeof document.createElement('canvas').getContext === 'function'],
   ['setTimeout',              typeof setTimeout === 'function'],
+  ['table.insertRow',         typeof document.createElement('table').insertRow === 'function'],
   ['XMLHttpRequest',          typeof XMLHttpRequest !== 'undefined'],
   ['fetch',                   typeof fetch !== 'undefined'],
   ['Promise',                 typeof Promise !== 'undefined'],
@@ -63,73 +98,93 @@ var checks = [
   ['Worker',                  typeof Worker !== 'undefined']
 ];
 
-var tbl = document.getElementById('results');
-for (var i = 0; i < checks.length; i++) {
-  var row = tbl.insertRow(-1);
-  var k = row.insertCell(0);
-  var v = row.insertCell(1);
-  k.className = 'k';
-  k.appendChild(document.createTextNode(checks[i][0]));
-  v.className = 'v ' + (checks[i][1] ? 'yes' : 'no');
+var rows = [];
+for (var i = 0; i < checks.length; i++) { rows.push([checks[i][0], yn(checks[i][1])]); }
+buildTable('results', ['API', 'present'], rows);
+
+var trapNames = ['localStorage', 'sessionStorage', 'WebSocket', 'Worker', 'XMLHttpRequest'];
+var trapRows = [];
+for (var j = 0; j < trapNames.length; j++) {
+  var n = trapNames[j], inWin = false, byTypeof = false;
+  try { inWin = (n in window); } catch (e) {}
+  try { byTypeof = (typeof window[n] !== 'undefined'); } catch (e) {}
+  trapRows.push([n, inWin ? 'true' : 'false', byTypeof ? 'true' : 'false']);
 }
+buildTable('traps', ['property', "'x' in window", 'typeof !== undefined'], trapRows);
 
-/* The `in` vs `typeof` trap.
-   nsgenbind registers window.localStorage / sessionStorage as real properties
-   on the global object, but the generated getter bodies have no implementation
-   and fall through to `return 0` -- i.e. undefined. So `'localStorage' in
-   window` is TRUE while the API is entirely unusable. Feature detection has to
-   use typeof; a script guarding with `in` will proceed and then fail. */
-var trapRows = [
-  ['localStorage',   'localStorage'],
-  ['sessionStorage', 'sessionStorage'],
-  ['WebSocket',      'WebSocket'],
-  ['Worker',         'Worker']
-];
-var trapTbl = document.createElement('table');
-var hdr = trapTbl.insertRow(-1);
-hdr.insertCell(0).appendChild(document.createTextNode('property'));
-hdr.insertCell(1).appendChild(document.createTextNode("'x' in window"));
-hdr.insertCell(2).appendChild(document.createTextNode('typeof !== undefined'));
+/* Also emit the results through console.log, so they can be read from the
+   process log over SSH instead of only off the tablet screen. */
+try {
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('NSJSPROBE engine=' + engine);
+    for (var p = 0; p < checks.length; p++) {
+      console.log('NSJSPROBE api ' + checks[p][0] + '=' + yn(checks[p][1]));
+    }
+    for (var q = 0; q < trapRows.length; q++) {
+      console.log('NSJSPROBE trap ' + trapRows[q][0] +
+                  ' in=' + trapRows[q][1] + ' typeof=' + trapRows[q][2]);
+    }
+  }
+} catch (e) { /* ignore */ }
 
-for (var j = 0; j < trapRows.length; j++) {
-  var name = trapRows[j][1];
-  var inWin = false, byTypeof = false;
-  try { inWin = (name in window); } catch (e) {}
-  try { byTypeof = (typeof window[name] !== 'undefined'); } catch (e) {}
-  var r = trapTbl.insertRow(-1);
-  r.insertCell(0).appendChild(document.createTextNode(name));
-  r.insertCell(1).appendChild(document.createTextNode(inWin ? 'true' : 'false'));
-  r.insertCell(2).appendChild(document.createTextNode(byTypeof ? 'true' : 'false'));
-}
-
-var trapHdr = document.createElement('h1');
-trapHdr.appendChild(document.createTextNode('Feature-detection trap'));
-document.body.appendChild(trapHdr);
-var trapNote = document.createElement('p');
-trapNote.innerHTML = 'Where these two columns disagree, the property exists but is ' +
-  'unusable. Detect with <b>typeof</b>, not <b>in</b>.';
-document.body.appendChild(trapNote);
-document.body.appendChild(trapTbl);
-
-/* Canvas smoke test */
+/* Canvas smoke test.
+   Track the outcome in a variable rather than writing it into the DOM and
+   reading it back: NetSurf's innerHTML setter renders, but the getter returns
+   "" regardless, so a readback check reports a false negative. textContent
+   round-trips correctly, so use that for the visible note. */
+var canvasOK = false;
+var canvasNote;
 try {
   var ctx = document.getElementById('cv').getContext('2d');
   if (ctx) {
     ctx.fillRect(10, 10, 60, 40);
     ctx.strokeRect(90, 10, 60, 40);
-    document.getElementById('canvasnote').innerHTML = 'canvas: drew 2 rects';
+    canvasOK = true;
+    canvasNote = 'canvas: drew 2 rects (fillRect + strokeRect)';
+  } else {
+    canvasNote = 'canvas: getContext returned null';
   }
 } catch (e) {
-  document.getElementById('canvasnote').innerHTML = 'canvas: failed - ' + e;
+  canvasNote = 'canvas: failed - ' + e;
 }
+document.getElementById('canvasnote').textContent = canvasNote;
 
-/* Event handling smoke test */
+/* Event smoke test */
 try {
   var vd = document.getElementById('verdict');
   vd.addEventListener('click', function () {
-    vd.innerHTML = 'click event fired — events work';
+    vd.innerHTML = 'click event fired &mdash; events work';
   }, false);
 } catch (e) { /* ignore */ }
+
+/* Report the results somewhere readable over SSH.
+   console.log is no good for this: NetSurf routes it to the internal
+   browser-window console, which the framebuffer frontend never surfaces, so it
+   is silently dropped. Uncaught exceptions, on the other hand, are written to
+   the process log by dukky_dump_error. So the last thing this page does is
+   throw its own summary. This is a diagnostic, not a pattern to copy --
+   everything above has already rendered by the time it fires. */
+(function () {
+  var out = ['engine=' + engine];
+  for (var a = 0; a < checks.length; a++) {
+    out.push(checks[a][0].replace(/ /g, '_') + '=' + yn(checks[a][1]));
+  }
+  for (var b = 0; b < trapRows.length; b++) {
+    out.push('trap:' + trapRows[b][0] + '[in=' + trapRows[b][1] + ',typeof=' + trapRows[b][2] + ']');
+  }
+  out.push('canvas=' + yn(canvasOK));
+  /* These two have a real constructor that only fails when called, so typeof
+     cannot detect them -- probe by construction. */
+  var ctorProbe = [['WebSocket', function () { return new WebSocket('ws://127.0.0.1:1/'); }],
+                   ['Worker',    function () { return new Worker('x.js'); }]];
+  for (var c = 0; c < ctorProbe.length; c++) {
+    var verdict;
+    try { ctorProbe[c][1](); verdict = 'constructed'; }
+    catch (err) { verdict = 'THREW:' + (err && err.message ? err.message : err); }
+    out.push('ctor:' + ctorProbe[c][0] + '=' + verdict);
+  }
+  throw new Error('NSJSPROBE ' + out.join(' | '));
+})();
 </script>
 
 <noscript><p><b>noscript: scripting is disabled.</b></p></noscript>

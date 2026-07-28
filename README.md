@@ -75,32 +75,38 @@ Scripting is gated twice in NetSurf and both gates have to move:
 Be realistic before relying on it. NetSurf's engine is [Duktape](https://duktape.org/), an **ES5.1**
 interpreter, driven by 67 WebIDL binding files.
 
-**Works:** DOM traversal and mutation, `getElementById` / `querySelector`, `createElement`, `classList`
-(`DOMTokenList`), CSSOM (`CSSRule` / `CSSStyleSheet`), most `HTML*Element` interfaces, `addEventListener`,
-`KeyboardEvent`, `Location`, `Navigator`, `console`, `JSON`, `<canvas>` 2D, form access and validation.
+Everything below was measured by running `example/jstest.html` on a reMarkable Paper Pro, not inferred from
+the source. Reported UA: `Mozilla/5.0 (X11; Linux) NetSurf/3.12`.
 
-**Not usable — verified by reading the generated bindings, not merely untested.** These fall into two
-different categories, which matters if you do feature detection:
+**Works (verified on device):** `getElementById`, `querySelector`, `createElement`, `appendChild`,
+`addEventListener`, `classList` (`DOMTokenList`), CSSOM, `textContent`, `console.log`, `JSON`, `setTimeout`,
+`Array.prototype.forEach`/`map`, the `Array.from` polyfill, and `<canvas>` 2D including `fillRect` and
+`strokeRect`.
 
-| API | State | Consequence |
-| --- | --- | --- |
-| `XMLHttpRequest`, `fetch` | No WebIDL, nothing generated at all | No AJAX of any kind. |
-| `Promise` | Not generated | No `async`/`await`. |
-| `WebSocket` | Stub generated from WebIDL | No live connections. |
-| `localStorage` / `sessionStorage` | Getter *registered on `window`*, body returns `undefined` | No client-side persistence. |
-| `Worker` | Stub generated from WebIDL | No background threads. |
+**Not usable.** Feature detection is genuinely hazardous here, because the failure modes differ per API:
 
-The storage case is the trap. `nsgenbind` emits `dukky_window_localStorage_getter`, and it *is* installed as
-a property on the global object — but the generated body has no implementation and falls through to
-`return 0`, i.e. `undefined`. So:
+| API | `in window` | `typeof` | What actually happens |
+| --- | --- | --- | --- |
+| `XMLHttpRequest` | `false` | `undefined` | Cleanly absent — detects correctly either way. |
+| `fetch` | `false` | `undefined` | Cleanly absent. |
+| `Promise` | `false` | `undefined` | Cleanly absent — no `async`/`await`. |
+| `localStorage` / `sessionStorage` | **`true`** | `undefined` | Property registered, value is `undefined`. `typeof` detects it; `in` does not. |
+| `WebSocket` | `true` | **`function`** | Constructor exists. `new WebSocket(...)` throws `Error: Bad constructor`. |
+| `Worker` | `true` | **`function`** | Constructor exists. `new Worker(...)` throws `Error: Bad constructor`. |
 
-```js
-typeof localStorage !== 'undefined'   // false  <- correct, use this
-'localStorage' in window              // TRUE   <- lies, the property exists
-```
+So there is **no single detection idiom that covers everything**. `typeof` saves you on storage but not on
+`WebSocket`/`Worker`, where the constructor is a real function that throws only when called. Those two have
+to be tried inside `try`/`catch`, or avoided.
 
-Feature-detect with `typeof`, never with `in` or truthiness on the constructor. A script guarding on `in`
-will conclude storage is available and then fail on first use.
+The same pattern shows up on ordinary DOM methods, so it is not confined to exotic APIs:
+
+- `table.insertRow` — `typeof` is `"function"`, but calling it returns `undefined`. Build tables with
+  `createElement('tr')` + `appendChild`.
+- **`innerHTML` is effectively write-only.** Assigning to it renders correctly, but reading it back returns
+  `""`. Use `textContent` when you need to read a node's content — that round-trips properly.
+
+The general rule: on this engine, a binding existing tells you nothing about whether it is implemented.
+Verify by calling it.
 
 One polyfill ships (`Array.from`). ES6+ syntax — arrow functions, `let`/`const`, classes, template literals —
 is a **parse error** to an ES5.1 interpreter, so a modern bundle fails at load rather than degrading.
